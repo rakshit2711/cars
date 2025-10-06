@@ -16,6 +16,8 @@ jobs:
   # Step 1: Data Preparation (mirrors Azure ML data prep job)
   data-preparation:
     runs-on: ubuntu-latest
+    outputs:
+      job-id: ${{ steps.data-prep.outputs.job-id }}
     steps:
     - uses: actions/checkout@v3
     
@@ -35,6 +37,7 @@ jobs:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
     - name: Run Data Preparation
+      id: data-prep
       run: |
         echo "Running data preparation step..."
         python .github/workflows/run_pipeline.py --step data_prep
@@ -47,6 +50,8 @@ jobs:
   model-training:
     needs: data-preparation
     runs-on: ubuntu-latest
+    outputs:
+      job-id: ${{ steps.training.outputs.job-id }}
     steps:
     - uses: actions/checkout@v3
     
@@ -66,6 +71,7 @@ jobs:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
     - name: Run Model Training
+      id: training
       run: |
         echo "Running model training step..."
         python .github/workflows/run_pipeline.py --step training
@@ -98,6 +104,7 @@ jobs:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
     - name: Run Model Registration
+      id: registration
       run: |
         echo "Running model registration step..."
         python .github/workflows/run_pipeline.py --step registration
