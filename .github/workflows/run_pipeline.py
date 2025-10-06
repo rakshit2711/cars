@@ -6,11 +6,69 @@ This script submits the MLOps pipeline to Azure ML
 import os
 import argparse
 from azure.ai.ml import MLClient, command, Input, Output
+from azure.ai.ml.entities import AmlCompute
 from azure.identity import DefaultAzureCredential
 
 def run_data_prep(ml_client):
     """Run data preparation step"""
     print("Running data preparation step...")
+    
+    # List all available compute resources to debug
+    print("Checking available compute resources...")
+    try:
+        computes = ml_client.compute.list()
+        for compute in computes:
+            print(f"Found compute: {compute.name} (Type: {compute.type}, State: {compute.provisioning_state})")
+    except Exception as e:
+        print(f"Error listing compute resources: {e}")
+    
+    # Try different compute targets, prioritizing compute clusters
+    
+    # Get available compute clusters (same logic as data prep)
+    compute_targets = [
+        "cars",
+        "cars-github"
+    ]
+       
+    compute_name = None
+    
+    for target in compute_targets:
+        try:
+            compute = ml_client.compute.get(target)
+            # Check if it's a compute cluster (not instance)
+            if compute.type == "amlcompute":
+                print(f"Using compute cluster: {target}")
+                compute_name = target
+                break
+            else:
+                print(f"Skipping {target} (Type: {compute.type}) - need compute cluster")
+        except Exception as e:
+            print(f"Compute {target} not available: {e}")
+            continue
+    
+    if not compute_name:
+        print("No suitable compute cluster found. Creating a new one...")
+        compute_name = "github-actions-cluster"
+        try:
+            compute = AmlCompute(
+                name=compute_name,
+                type="amlcompute",
+                size="Standard_DS3_v2",
+                min_instances=0,
+                max_instances=2,
+                idle_time_before_scale_down=120,
+                tier="Dedicated",
+            )
+            print(f"Creating compute cluster: {compute_name}")
+            operation = ml_client.compute.begin_create_or_update(compute)
+            print("Waiting for compute creation to complete...")
+            operation.wait()
+            print(f"Successfully created compute cluster: {compute_name}")
+        except Exception as e:
+            print(f"Failed to create compute cluster: {e}")
+            print("This might be due to quota limits or permissions.")
+            print("Please create a compute cluster manually in Azure ML Studio.")
+            raise
     
     # Get the data asset
     try:
@@ -33,7 +91,7 @@ def run_data_prep(ml_client):
         code="./src",
         command="python data_prep.py --data ${{inputs.data}} --test_train_ratio ${{inputs.test_train_ratio}} --train_data ${{outputs.train_data}} --test_data ${{outputs.test_data}}",
         environment="machine_learning_E2E@latest",
-        compute="cars",
+        compute=compute_name,
         display_name="data_preparation",
         description="Data preparation for used cars price prediction",
     )
@@ -42,10 +100,36 @@ def run_data_prep(ml_client):
     returned_job = ml_client.jobs.create_or_update(data_prep_job)
     print(f"Data prep job submitted. Job name: {returned_job.name}")
     print(f"Job status: {returned_job.status}")
+    return returned_job.name
 
 def run_training(ml_client):
     """Run model training step"""
     print("Running model training step...")
+    
+    # Get available compute clusters (same logic as data prep)
+    compute_targets = [
+        "cars",
+        "cars-github"
+    ]
+    
+    compute_name = None
+    
+    for target in compute_targets:
+        try:
+            compute = ml_client.compute.get(target)
+            if compute.type == "amlcompute":
+                print(f"Using compute cluster: {target}")
+                compute_name = target
+                break
+            else:
+                print(f"Skipping {target} (Type: {compute.type}) - need compute cluster")
+        except Exception as e:
+            print(f"Compute {target} not available: {e}")
+            continue
+    
+    if not compute_name:
+        print("No suitable compute cluster found for training.")
+        raise Exception("Please ensure a compute cluster is available")
     
     # Try to get the latest data preparation outputs or use default paths
     try:
@@ -70,7 +154,7 @@ def run_training(ml_client):
         code="./src",
         command="python train.py --train_data ${{inputs.train_data}} --test_data ${{inputs.test_data}} --n_estimators ${{inputs.n_estimators}} --max_depth ${{inputs.max_depth}} --model_output ${{outputs.model_output}}",
         environment="machine_learning_E2E@latest",
-        compute="cars",
+        compute=compute_name,
         display_name="train_model",
         description="Train Random Forest model for used cars price prediction",
     )
@@ -79,10 +163,38 @@ def run_training(ml_client):
     returned_job = ml_client.jobs.create_or_update(train_job)
     print(f"Training job submitted. Job name: {returned_job.name}")
     print(f"Job status: {returned_job.status}")
+    return returned_job.name
 
 def run_registration(ml_client):
     """Run model registration step"""
     print("Running model registration step...")
+    
+    # Get available compute clusters (same logic as other steps)
+    
+    # Get available compute clusters (same logic as data prep)
+    compute_targets = [
+        "cars",
+        "cars-github"
+    ]
+    
+    compute_name = None
+    
+    for target in compute_targets:
+        try:
+            compute = ml_client.compute.get(target)
+            if compute.type == "amlcompute":
+                print(f"Using compute cluster: {target}")
+                compute_name = target
+                break
+            else:
+                print(f"Skipping {target} (Type: {compute.type}) - need compute cluster")
+        except Exception as e:
+            print(f"Compute {target} not available: {e}")
+            continue
+    
+    if not compute_name:
+        print("No suitable compute cluster found for registration.")
+        raise Exception("Please ensure a compute cluster is available")
     
     # Try to get the latest model output or use default path
     try:
@@ -97,7 +209,7 @@ def run_registration(ml_client):
         code="./src",
         command="python model_register.py --model ${{inputs.model}}",
         environment="machine_learning_E2E@latest",
-        compute="cars",
+        compute=compute_name,
         display_name="register_model",
         description="Register the trained model in MLflow registry",
     )
@@ -106,6 +218,7 @@ def run_registration(ml_client):
     returned_job = ml_client.jobs.create_or_update(register_job)
     print(f"Registration job submitted. Job name: {returned_job.name}")
     print(f"Job status: {returned_job.status}")
+    return returned_job.name
 
 def main():
     # Parse command line arguments
