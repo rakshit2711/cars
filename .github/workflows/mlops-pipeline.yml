@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_ML_WORKSPACE: your-ml-workspace
-  AZURE_RESOURCE_GROUP: your-resource-group
-  AZURE_SUBSCRIPTION_ID: your-subscription-id
+  AZURE_ML_WORKSPACE: cars
+  AZURE_RESOURCE_GROUP: default_resource_group
+  AZURE_SUBSCRIPTION_ID: 2f9c878-1ca2-40dc-a868-b68e6b45074d
 
 jobs:
   data-validation:
